@@ -73,9 +73,7 @@ func _add_all_gltf_nodes_to_skin(obj: Dictionary):
 
 
 func _add_all_glb_nodes_to_skin(path):
-	var f = File.new()
-	if f.open(path, File.READ) != OK:
-		return FAILED
+	var f = FileAccess.open(path, FileAccess.READ)
 
 	var magic = f.get_32()
 	if magic != 0x46546C67:
@@ -93,8 +91,6 @@ func _add_all_glb_nodes_to_skin(path):
 	if (f.get_length() != full_length):
 		push_error("Incorrect full_length in " + str(path))
 
-	f.close()
-	
 	var json : JSON = JSON.new()
 	var error = json.parse(orig_json_utf8.get_string_from_utf8())
 	if error != OK:
@@ -104,19 +100,16 @@ func _add_all_glb_nodes_to_skin(path):
 	_add_all_gltf_nodes_to_skin(gltf_json_parsed)	
 	var json_utf8: PackedByteArray = json.stringify(gltf_json_parsed).to_utf8_buffer()
 
-	f = File.new()
-	if f.open(path, File.WRITE) != OK:
-		return FAILED
-	f.store_32(magic)
-	f.store_32(version)
-	f.store_32(full_length + len(json_utf8) - len(orig_json_utf8))
-	f.store_32(len(json_utf8))
-	f.store_32(chunk_type)
-	f.store_buffer(json_utf8)
-	f.store_buffer(rest_data)
-	f.close()
+	var f2 = FileAccess.open(path, FileAccess.WRITE)
+	f2.store_32(magic)
+	f2.store_32(version)
+	f2.store_32(full_length + len(json_utf8) - len(orig_json_utf8))
+	f2.store_32(len(json_utf8))
+	f2.store_32(chunk_type)
+	f2.store_buffer(json_utf8)
+	f2.store_buffer(rest_data)
 
-func _import_scene(path: String, flags: int, bake_fps: int):
+func _import_scene(path: String, flags: int, options: Dictionary, bake_fps: int):
 	var import_config_file = ConfigFile.new()
 	import_config_file.load(path + ".import")
 	var compression_flags: int = import_config_file.get_value("params", "meshes/compress", 0)
@@ -141,10 +134,10 @@ func _import_scene(path: String, flags: int, bake_fps: int):
 	script = script.replace("GODOT_FILENAME", path_global)
 	output_path_global = output_path_global.c_escape()
 	script = script.replace("GODOT_EXPORT_PATH", output_path_global)
-	var dir = Directory.new()
 	var tex_dir_global = output_path_global + "_textures"
 	tex_dir_global.c_escape()
-	dir.make_dir(tex_dir_global)
+	var dir = DirAccess.open('res://')
+	dir.make_dir_recursive(tex_dir_global)
 	script = script.replace("GODOT_TEXTURE_PATH", tex_dir_global)
 	var args = [
 		"--background",
@@ -161,7 +154,8 @@ func _import_scene(path: String, flags: int, bake_fps: int):
 	_add_all_glb_nodes_to_skin(output_path)
 	var gstate : GLTFState = GLTFState.new()
 	var gltf : GLTFDocument = GLTFDocument.new()
-	var root_node : Node = gltf.import_scene(output_path, flags, bake_fps, gstate)
+	gltf.append_from_file(output_path, gstate, flags, bake_fps)
+	var root_node : Node = gltf.generate_scene(gstate, bake_fps)
 	root_node.name = path.get_basename().get_file()
 	return root_node
 
